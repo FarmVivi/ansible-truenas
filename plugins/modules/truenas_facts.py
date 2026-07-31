@@ -87,7 +87,8 @@ ansible_facts.truenas_product_name:
   sample: TrueNAS
 ansible_facts.truenas_product_type:
   description:
-    - The flavor of TrueNAS. One of C(CORE), C(ENTERPRISE), or C(SCALE).
+    - The flavor of TrueNAS. For example C(CORE), C(ENTERPRISE), C(SCALE),
+      or C(COMMUNITY_EDITION).
   type: str
   returned: always
   sample: CORE
@@ -106,7 +107,6 @@ ansible_facts.truenas_features:
   sample: {
       "DEDUP": true,
       "FIBRECHANNEL": false,
-      "JAILS": true,
       "VM": true,
     }
 ansible_facts.truenas_state:
@@ -272,15 +272,20 @@ def main():
             module.warn(f'Unexpected type or build_time: {type(build_time)}.')
             result['ansible_facts']['truenas_build_time'] = build_time
 
+        # JAILS is a CORE-only feature. Recent SCALE releases validate the
+        # argument before dispatch and reject JAILS with EINVAL instead of the
+        # older "Invalid choice" message, so do not query it on SCALE.
+        features = ['DEDUP', 'FIBRECHANNEL', 'VM']
+        if product_type == 'CORE':
+            features.append('JAILS')
+
         # Get the set of features and whether they're enabled.
         result['truenas_features'] = {}
-        for feat in ('DEDUP', 'FIBRECHANNEL', 'JAILS', 'VM'):
+        for feat in features:
             try:
                 feat_set = mw.call("system.feature_enabled", feat, output='str')
                 result['truenas_features'][feat] = feat_set
             except Exception as e:
-                # SCALE doesn't have "JAILS". This is expected, so
-                # don't throw an error.
                 if "Invalid choice" in str(e):
                     pass
                 else:
