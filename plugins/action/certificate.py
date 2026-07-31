@@ -52,7 +52,9 @@ class ActionModule(ActionBase):
             subtask.args['private_key'] = private_key
 
         # Now run the actual module.
-        result = self._execute_module(module_name="certificate",
+        # Newer ansible-core versions no longer resolve a collection module
+        # from its short name when called by an action plugin.
+        result = self._execute_module(module_name="arensb.truenas.certificate",
                                       module_args=subtask.args,
                                       task_vars=task_vars)
         return result

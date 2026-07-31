@@ -1,0 +1,3 @@
+bugfixes:
+  - Use fully-qualified module names from certificate action plugins for
+    compatibility with recent ansible-core releases.

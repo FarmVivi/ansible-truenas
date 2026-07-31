@@ -53,7 +53,8 @@ class ActionModule(ActionBase):
             subtask.args['private_key'] = private_key
 
         # Now run the actual module.
-        result = self._execute_module(module_name="certificate_authority",
+        result = self._execute_module(
+                                      module_name="arensb.truenas.certificate_authority",
                                       module_args=subtask.args,
                                       task_vars=task_vars)
         return result
