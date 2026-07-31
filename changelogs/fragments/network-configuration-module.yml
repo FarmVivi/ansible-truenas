@@ -1,0 +1,4 @@
+minor_changes:
+  - >-
+    Add network_configuration for idempotent hostname, domain, default
+    gateways, DNS servers, search domains and service announcements.
