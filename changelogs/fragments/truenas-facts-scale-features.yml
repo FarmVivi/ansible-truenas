@@ -1,0 +1,4 @@
+bugfixes:
+  - >-
+    truenas_facts - stop querying the CORE-only JAILS feature on SCALE and
+    COMMUNITY_EDITION systems, where TrueNAS 25.10 rejects it with EINVAL.
