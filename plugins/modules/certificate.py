@@ -147,8 +147,8 @@ argument_spec=dict(
     src=dict(type='path'),
     certificate=dict(type='str'),
     private_keyfile=dict(type='path'),
-    private_key=dict(type='str'),
-    passphrase=dict(type='str'),
+    private_key=dict(type='str', no_log=True),
+    passphrase=dict(type='str', no_log=True),
     revoked=dict(type='bool', default=False),
 )
 required_if = [
@@ -229,7 +229,7 @@ class Cert:
                     arg['passphrase'] = passphrase
 
                 if self.module.check_mode:
-                    self.result['msg'] = f"Would have created certificate {name} with {arg}"
+                    self.result['msg'] = f"Would have created certificate {name}."
                 else:
                     #
                     # Create new cert
@@ -239,7 +239,6 @@ class Cert:
                         err = self.mw.job("certificate.create", arg)
                         self.result['certificate'] = err
                     except Exception as e:
-                        self.result['failed_invocation'] = arg
                         self.module.fail_json(msg=f"Error creating certificate {name}: {e}")
 
                     # Return whichever interesting bits certificate.create()
@@ -384,7 +383,7 @@ class Cert:
                     arg['passphrase'] = passphrase
 
                 if self.module.check_mode:
-                    self.result['msg'] = f"Would have created certificate {name} with {arg}"
+                    self.result['msg'] = f"Would have created certificate {name}."
                 else:
                     #
                     # Create new cert
@@ -394,7 +393,6 @@ class Cert:
                         err = self.mw.job("certificate.create", arg)
                         self.result['certificate'] = err
                     except Exception as e:
-                        self.result['failed_invocation'] = arg
                         self.module.fail_json(msg=f"Error creating certificate {name}: {e}")
 
                     # Return whichever interesting bits certificate.create()
