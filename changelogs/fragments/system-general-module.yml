@@ -1,0 +1,5 @@
+minor_changes:
+  - >-
+    Add system_general for idempotent web UI, timezone, usage collection and
+    directory-service authentication settings, including certificate lookup by
+    name without returning expanded private key material.
