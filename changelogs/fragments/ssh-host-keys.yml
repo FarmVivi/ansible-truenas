@@ -1,0 +1,4 @@
+minor_changes:
+  - >-
+    Add an ssh_configuration module and action plugin to manage persistent SSH
+    service settings and host key identities through ssh.update.
