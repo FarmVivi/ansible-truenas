@@ -70,6 +70,12 @@ options:
         This option does nothing.
     type: bool
     default: false
+  add_to_trusted_store:
+    description:
+      - Add the imported CA certificate to the TrueNAS system trust store.
+      - Supported on TrueNAS SCALE 25.10 and newer.
+    type: bool
+    default: true
 notes:
   - There appears to be a bug in TrueNAS 25.04.0 that prevents installing
     certificates with keys greater than 2048 bits long. In fact, 2048 seems
@@ -159,6 +165,7 @@ argument_spec = dict(
     private_key=dict(type='str'),
     passphrase=dict(type='str', no_log=True),
     revoked=dict(type='bool', default=False),
+    add_to_trusted_store=dict(type='bool', default=True),
 )
 required_if = [
     ('state', 'present', ('src', 'certificate', 'revoked'), True),
@@ -380,6 +387,7 @@ class CA:
         private_key = self.module.params['private_key']
         passphrase = self.module.params['passphrase']
         revoked = self.module.params['revoked']
+        add_to_trusted_store = self.module.params['add_to_trusted_store']
 
         # Look up the CA cert
         try:
@@ -415,6 +423,7 @@ class CA:
                 arg = {
                     "name": name,
                     "create_type": "CERTIFICATE_CREATE_IMPORTED",
+                    "add_to_trusted_store": add_to_trusted_store,
                     "cert_extensions": {
                         "BasicConstraints": {
                             "ca": True,
@@ -479,8 +488,22 @@ class CA:
                 # self.module uses 'name' as an identifier, the name
                 # can't be changed, either.
 
-                # No changes
-                self.result['changed'] = False
+                if ca_cert_info.get('add_to_trusted_store') == add_to_trusted_store:
+                    self.result['changed'] = False
+                else:
+                    update = {'add_to_trusted_store': add_to_trusted_store}
+                    if self.module.check_mode:
+                        self.result['msg'] = (
+                            f"Would have updated CA cert {name}: {update}")
+                    else:
+                        try:
+                            self.result['status'] = self.mw.job(
+                                "certificate.update", ca_cert_info['id'], update)
+                        except Exception as e:
+                            self.module.fail_json(
+                                msg=(f"Error updating CA certificate {name} "
+                                     f"({ca_cert_info['id']}) with {update}: {e}"))
+                    self.result['changed'] = True
 
             else:
                 # CA is not supposed to exist
