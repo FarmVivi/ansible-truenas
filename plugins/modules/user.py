@@ -114,6 +114,15 @@ options:
         may not use SMB, so be sure to set C(smb: false)."
     type: bool
     default: false
+  ssh_password_enabled:
+    description:
+      - Allow this user to authenticate to SSH with their account password.
+      - This is independent from public-key authentication.
+    type: bool
+  locked:
+    description:
+      - Lock or unlock the account.
+    type: bool
   shell:
     description:
       - User's shell.
@@ -354,6 +363,8 @@ def main():
             # disabled" and "user doesn't care whether the password is
             # disabled". None is the latter.
             password_disabled=dict(type='bool', no_log=False),
+            ssh_password_enabled=dict(type='bool', no_log=False),
+            locked=dict(type='bool'),
 
             # XXX - There should probably be an option saying whether
             # or not to allow other keys in .ssh/authorized_keys, the
@@ -437,10 +448,9 @@ def main():
             # - role(str) - Solaris
         )
     mod_mutually_exclusive = []
-    mod_required_if = [
-        ['password_disabled', False, ['password']],
-        ['password_disabled', None, ['password']],
-        ]
+    # Password is required only when creating an enabled account. Existing
+    # accounts can be reconciled without rotating their password.
+    mod_required_if = []
 
     # Make adjustments for systems using the old API.
     if old_sudo_api:
@@ -468,6 +478,8 @@ def main():
     username = module.params['name']
     password = module.params['password']
     password_disabled = module.params['password_disabled']
+    ssh_password_enabled = module.params['ssh_password_enabled']
+    locked = module.params['locked']
     group = module.params['group']
     create_group = module.params['create_group']
     groups = module.params['groups']
@@ -537,6 +549,11 @@ def main():
         if state == 'present':
             # User is supposed to exist, so create it.
 
+            if password is None and password_disabled is not True:
+                module.fail_json(
+                    msg=(f'Creating user {username} requires password, or '
+                         'password_disabled=true.'))
+
             # Collect arguments to pass to user.create()
             arg = {
                 "username": username,
@@ -559,6 +576,12 @@ def main():
             else:
                 # password_disabled is not set.
                 arg['password'] = password
+
+            if ssh_password_enabled is not None:
+                arg['ssh_password_enabled'] = ssh_password_enabled
+
+            if locked is not None:
+                arg['locked'] = locked
 
             if comment is None:
                 arg['full_name'] = ""
@@ -780,6 +803,13 @@ def main():
             if password_disabled is not None and \
                user_info['password_disabled'] != password_disabled:
                 arg['password_disabled'] = password_disabled
+
+            if ssh_password_enabled is not None and \
+               user_info.get('ssh_password_enabled') != ssh_password_enabled:
+                arg['ssh_password_enabled'] = ssh_password_enabled
+
+            if locked is not None and user_info.get('locked') != locked:
+                arg['locked'] = locked
 
             if comment is not None and user_info['full_name'] != comment:
                 arg['full_name'] = comment

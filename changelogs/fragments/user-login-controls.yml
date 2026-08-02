@@ -1,0 +1,4 @@
+minor_changes:
+  - >-
+    Allow password-preserving user updates and manage locked and
+    ssh_password_enabled account controls.
