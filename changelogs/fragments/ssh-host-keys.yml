@@ -1,4 +1,6 @@
 minor_changes:
   - >-
     Add an ssh_configuration module and action plugin to manage persistent SSH
-    service settings and host key identities through ssh.update.
+    service settings and host key identities through middlewared.
+    Host keys are persisted in the narrowly-scoped services.ssh datastore row
+    because TrueNAS 25.10 exposes them read-only through ssh.update.

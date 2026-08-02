@@ -73,6 +73,7 @@ def main():
         module.fail_json(msg=f'Error looking up SSH configuration: {exc}')
 
     update = {}
+    host_key_update = {}
     for option in ('passwordauth', 'tcpport', 'bindiface'):
         desired = module.params[option]
         if desired is not None and current.get(option) != desired:
@@ -88,14 +89,32 @@ def main():
                 continue
             field = f'host_{algorithm}_{suffix}'
             if (current.get(field) or '').strip() != desired.strip():
-                update[field] = desired
+                # These fields are exposed by ssh.config but deliberately
+                # omitted from ssh.update's public schema in TrueNAS 25.10.
+                # They live persistently in services.ssh and are read back by
+                # the SSH service, so update that narrowly-scoped datastore
+                # row rather than transient files under /etc/ssh.
+                host_key_update[f'ssh_{field}'] = desired
 
-    changed_fields = sorted(update.keys())
-    if not update or module.check_mode:
-        module.exit_json(changed=bool(update), changed_fields=changed_fields)
+    changed_fields = sorted(
+        list(update.keys())
+        + [field.removeprefix('ssh_') for field in host_key_update]
+    )
+    if not update and not host_key_update:
+        module.exit_json(changed=False, changed_fields=[])
+    if module.check_mode:
+        module.exit_json(changed=True, changed_fields=changed_fields)
 
     try:
-        mw.call('ssh.update', update)
+        if host_key_update:
+            mw.call('datastore.update', 'services.ssh', current['id'],
+                    host_key_update)
+        if update:
+            # ssh.update reloads the service and therefore activates the host
+            # key values staged immediately above.
+            mw.call('ssh.update', update)
+        elif host_key_update:
+            mw.call('service.restart', 'ssh')
     except Exception as exc:
         module.fail_json(
             msg=f'Error updating SSH configuration fields {changed_fields}: {exc}')
