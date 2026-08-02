@@ -1,0 +1,4 @@
+minor_changes:
+  - >-
+    certificate_authority - add add_to_trusted_store support for imported
+    certificate authorities on TrueNAS SCALE 25.10 and newer.
