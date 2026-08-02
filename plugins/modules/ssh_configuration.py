@@ -38,6 +38,10 @@ EXAMPLES = r'''
         public_keyfile: files/ssh_host_ed25519_key.pub
 '''
 
+import base64
+import os
+import tempfile
+
 from ansible.module_utils.basic import AnsibleModule
 from ..module_utils.middleware import MiddleWare as MW
 
@@ -88,17 +92,27 @@ def main():
             if desired is None:
                 continue
             field = f'host_{algorithm}_{suffix}'
-            if (current.get(field) or '').strip() != desired.strip():
-                # These fields are exposed by ssh.config but deliberately
-                # omitted from ssh.update's public schema in TrueNAS 25.10.
-                # They live persistently in services.ssh and are read back by
-                # the SSH service, so update that narrowly-scoped datastore
-                # row rather than transient files under /etc/ssh.
-                host_key_update[f'ssh_{field}'] = desired
+            path = f'/etc/ssh/ssh_host_{algorithm}_key'
+            if source_name == 'public_key':
+                path += '.pub'
+            try:
+                stored = base64.b64decode(current.get(field) or '').decode()
+            except Exception:
+                stored = ''
+            try:
+                with open(path, 'rt') as key_file:
+                    runtime = key_file.read()
+            except FileNotFoundError:
+                runtime = ''
+            if stored.strip() != desired.strip() or runtime.strip() != desired.strip():
+                host_key_update[path] = {
+                    'content': desired,
+                    'mode': 0o600 if source_name == 'private_key' else 0o644,
+                }
 
     changed_fields = sorted(
         list(update.keys())
-        + [field.removeprefix('ssh_') for field in host_key_update]
+        + [os.path.basename(path) for path in host_key_update]
     )
     if not update and not host_key_update:
         module.exit_json(changed=False, changed_fields=[])
@@ -107,11 +121,24 @@ def main():
 
     try:
         if host_key_update:
-            mw.call('datastore.update', 'services.ssh', current['id'],
-                    host_key_update)
+            for path, key in host_key_update.items():
+                directory = os.path.dirname(path)
+                fd, temporary_path = tempfile.mkstemp(dir=directory)
+                try:
+                    with os.fdopen(fd, 'w') as key_file:
+                        key_file.write(key['content'])
+                    os.chmod(temporary_path, key['mode'])
+                    os.replace(temporary_path, path)
+                finally:
+                    if os.path.exists(temporary_path):
+                        os.unlink(temporary_path)
+            # TrueNAS' own private helper base64-encodes /etc/ssh host keys
+            # into the encrypted services.ssh datastore row. They are then
+            # restored across upgrades and reboots by the normal boot flow.
+            mw.call('ssh.save_keys')
         if update:
-            # ssh.update reloads the service and therefore activates the host
-            # key values staged immediately above.
+            # ssh.update reloads the service and activates the files staged
+            # immediately above.
             mw.call('ssh.update', update)
         elif host_key_update:
             mw.call('service.restart', 'ssh')
