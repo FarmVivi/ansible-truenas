@@ -1,0 +1,8 @@
+minor_changes:
+  - alertservice - new module to manage the destinations TrueNAS sends its
+    alerts to. ``alertservice`` had no module at all, so any playbook wanting
+    to declare who gets alerted had to reimplement create/update/delete over
+    ``midclt``. The service name is the resource identifier, matching the
+    ``Mail`` service TrueNAS ships with. Only the attributes the caller
+    declares take part in the idempotence check, because middlewared echoes
+    back defaults that were never set.
