@@ -79,6 +79,16 @@ options:
     description:
       - Arbitrary comment or notes for the dataset.
     type: str
+  casesensitivity:
+    description:
+      - Whether file names on the dataset are matched case-sensitively.
+      - TrueNAS creates SMB share datasets as INSENSITIVE; a dataset backing an
+        SMB share and created SENSITIVE will misbehave with Windows clients.
+      - Only valid at dataset creation time. ZFS cannot change this afterwards,
+        so declaring a value that differs from an existing dataset is an error
+        rather than a silent no-op.
+    type: str
+    choices: [ SENSITIVE, INSENSITIVE, INHERIT ]
 
   # (Other properties truncated for brevity, same as before)...
 
@@ -152,6 +162,10 @@ def main():
         sparse=dict(type="bool"),
         force_size=dict(type="bool", default=False),
         create_ancestors=dict(type="bool", default=False),
+        casesensitivity=dict(
+            type="str",
+            choices=["SENSITIVE", "INSENSITIVE", "INHERIT"],
+        ),
         # The rest of the properties...
         comments=dict(type="str"),
         sync=dict(type="str"),
@@ -319,6 +333,11 @@ def build_create_args(params, module):
         if params.get("force_size") is not None:
             create_args["force_size"] = params["force_size"]
 
+    # Only settable at creation time, and only on a filesystem: a zvol has no
+    # file names to match.
+    if create_args["type"] == "FILESYSTEM" and params.get("casesensitivity") is not None:
+        create_args["casesensitivity"] = params["casesensitivity"]
+
     # The rest of the properties are optional
     create_props = [
         "comments",
@@ -406,6 +425,20 @@ def build_update_args(params, existing_ds, module):
         # force_size can be used if resizing
         if params.get("force_size") is not None and params.get("force_size") == True:
             update_args["force_size"] = True
+
+    # ZFS fixes casesensitivity at creation and pool.dataset.update does not
+    # accept it. Fail loudly rather than let the inventory claim a value the
+    # dataset does not have, the way volblocksize is handled above.
+    if params.get("casesensitivity") is not None and params["casesensitivity"] != "INHERIT":
+        current_cs = prop_rawvalue(existing_ds, "casesensitivity")
+        if current_cs is not None and current_cs.upper() != params["casesensitivity"]:
+            module.fail_json(
+                msg=(
+                    f"Cannot update 'casesensitivity' on an existing dataset. "
+                    f"Current={current_cs} vs. desired={params['casesensitivity']}. "
+                    f"The dataset has to be recreated to change it."
+                )
+            )
 
     # For normal props (both filesystem + volume)
     updatable_props = [

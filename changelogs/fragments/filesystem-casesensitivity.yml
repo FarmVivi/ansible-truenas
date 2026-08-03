@@ -1,0 +1,7 @@
+minor_changes:
+  - filesystem - added the ``casesensitivity`` option, accepted by
+    ``pool.dataset.create`` but previously not exposed. It is what makes a
+    dataset behave correctly behind an SMB share, and TrueNAS sets it
+    implicitly through ``share_type``, which no module exposes either. Since
+    ZFS fixes it at creation, declaring a value that differs from an existing
+    dataset fails the task instead of silently doing nothing.
