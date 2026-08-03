@@ -13,9 +13,11 @@ short_description: Manage ZFS datasets (filesystems/volumes) via TrueNAS middlew
 description:
   - Create, update, and delete ZFS datasets on TrueNAS using the middleware API.
   - Prevents sending null or invalid fields that cause errors.
-  - Normalizes property values so that e.g. '64K' is treated the same as '65536'
-    for volblocksize comparisons. If a user tries to change volblocksize or sparse
-    on an existing volume, the module raises an error (since TrueNAS disallows it).
+  - Normalizes property values so that e.g. '64K' is treated the same as '65536',
+    both for volblocksize and for size-valued properties such as recordsize.
+  - Changing volblocksize on an existing volume raises an error, since TrueNAS
+    disallows it. Changing sparse is impossible too, but only warns, and only
+    when the requested value differs from the current one.
 options:
   name:
     description:
@@ -389,9 +391,17 @@ def build_update_args(params, existing_ds, module):
         # If user tries to update sparse => check if it differs
         # If differs => error, if same => skip
         if params.get("sparse") is not None:
-            module.warn(
-                "Cannot update 'sparse' on existing volume, ignoring parameter."
+            # A sparse zvol carries no refreservation; that is the only trace
+            # of its sparseness middlewared exposes. Only warn when the
+            # requested value actually differs from reality, so that declaring
+            # the current value stays quiet.
+            current_sparse = prop_rawvalue(existing_ds, "refreservation") in (
+                None, "0", "",
             )
+            if current_sparse != bool(params["sparse"]):
+                module.warn(
+                    "Cannot update 'sparse' on existing volume, ignoring parameter."
+                )
 
         # force_size can be used if resizing
         if params.get("force_size") is not None and params.get("force_size") == True:
@@ -450,8 +460,6 @@ def build_update_args(params, existing_ds, module):
             ups.append(up)
         if ups:
             update_args["user_properties_update"] = ups
-
-    module.warn(f"update_args={update_args}")
 
     return update_args
 
@@ -537,6 +545,17 @@ def prop_rawvalue(dataset_entry, prop_name):
     return None
 
 
+# ZFS properties whose value is a size: the API takes a suffixed string
+# ("128K", "1M"), middlewared reports plain bytes.
+ZFS_SIZE_PROPS = frozenset(("recordsize", "special_small_block_size"))
+
+
+def parse_size(value):
+    """parse_volsize(), tolerating the bare-byte form used by
+    pool.dataset.recordsize_choices ('512B')."""
+    return parse_volsize(re.sub(r"(?<=\d)B$", "", value.strip()))
+
+
 def compare_prop(prop_name, desired_val, current_str):
     """
     Compare desired_val (from user) vs. current_str (from dataset's rawvalue)
@@ -570,6 +589,16 @@ def compare_prop(prop_name, desired_val, current_str):
     }
     if desired_str.lower() in lower_enums or current_str.lower() in lower_enums:
         return desired_str.lower() == current_str.lower()
+
+    # middlewared always reports sizes in bytes in `rawvalue`, while the API
+    # only accepts the suffixed form on input. Comparing the two as strings
+    # made e.g. recordsize='1M' never equal to rawvalue '1048576', so the
+    # module reissued pool.dataset.update on every run and never converged.
+    if prop_name in ZFS_SIZE_PROPS:
+        try:
+            return parse_size(desired_str) == parse_size(current_str)
+        except ValueError:
+            pass
 
     # otherwise direct string compare
     return desired_str == current_str

@@ -1,0 +1,11 @@
+bugfixes:
+  - filesystem - size-valued properties are now compared in bytes instead of as
+    strings. middlewared reports ``recordsize`` as ``1048576`` while the API only
+    accepts the suffixed form (``1M``), so declaring ``recordsize`` made the
+    module reissue ``pool.dataset.update`` on every run and report ``changed``
+    forever, without ever converging.
+  - filesystem - declaring ``sparse`` on an existing volume no longer warns when
+    the requested value already matches reality. Sparseness is derived from
+    ``refreservation``, so the warning is now limited to an actual mismatch.
+  - filesystem - removed an unconditional debug warning that printed the
+    computed ``update_args`` on every task run.
