@@ -644,7 +644,7 @@ def main():
                     arg['sudo_commands'] = sudo_commands
 
                 if sudo_commands_nopasswd is not None:
-                    arg['sudo_commands'] = sudo_commands
+                    arg['sudo_commands_nopasswd'] = sudo_commands_nopasswd
 
             if shell is not None:
                 arg['shell'] = shell
