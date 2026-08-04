@@ -1,0 +1,8 @@
+bugfixes:
+  - "user - creating an account with ``sudo_commands_nopasswd`` no longer fails.
+    On middleware versions using the current sudo API, the create path assigned
+    ``sudo_commands`` (still ``None``) to the ``sudo_commands`` key instead of
+    assigning ``sudo_commands_nopasswd`` to its own key. middlewared rejected the
+    call, complaining that sudo_commands should be a valid list, and the
+    passwordless commands were never sent at all. The update path was already
+    correct."
