@@ -267,13 +267,20 @@ def main():
     streams = module.params['streams']
     fsrvp = module.params['fsrvp']
 
+    is_scale_25_10 = tn_version['name'] == "TrueNAS" and \
+        tn_version['type'] in {"SCALE", "COMMUNITY_EDITION"} and \
+        tn_version['version'] >= TC_25_10
+
     # SCALE 25.10 got rid of purpose: NO_PRESET. The default is
     # DEFAULT_SHARE. Silently substitute it here.
-    if tn_version['name'] == "TrueNAS" and \
-       tn_version['type'] in {"SCALE", "COMMUNITY_EDITION"} and \
-       tn_version['version'] >= TC_25_10:
+    if is_scale_25_10:
         if purpose == "NO_PRESET":
             purpose = "DEFAULT_SHARE"
+
+    # SCALE 25.10 renamed the read-only flag from 'ro' to 'readonly', in the
+    # `sharing.smb.query' output as well as in the create/update payloads.
+    # Reading the old name there raises KeyError: 'ro' and fails the task.
+    ro_key = "readonly" if is_scale_25_10 else "ro"
 
     # Look up the share
     try:
@@ -328,7 +335,7 @@ def main():
                 arg['home'] = is_home
 
             if is_ro is not None:
-                arg['ro'] = is_ro
+                arg[ro_key] = is_ro
 
             if browsable is not None:
                 arg['browsable'] = browsable
@@ -438,8 +445,8 @@ def main():
                 arg['home'] = is_home
 
             if is_ro is not None and \
-               share_info['ro'] != is_ro:
-                arg['ro'] = is_ro
+               share_info.get(ro_key) != is_ro:
+                arg[ro_key] = is_ro
 
             if browsable is not None and \
                share_info['browsable'] != browsable:
