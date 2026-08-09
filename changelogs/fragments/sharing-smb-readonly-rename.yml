@@ -1,0 +1,9 @@
+bugfixes:
+  - >-
+    sharing_smb - passing ``ro`` on TrueNAS SCALE 25.10 failed the task with
+    ``Module failed - 'ro'``. That release renamed the read-only flag to
+    ``readonly``, both in the ``sharing.smb.query`` output and in the
+    create/update payloads, so reading ``share_info['ro']`` raised a
+    ``KeyError``. The module now picks the field name from the detected TrueNAS
+    version, the same way it already substitutes the removed ``NO_PRESET``
+    purpose.
