@@ -1,0 +1,6 @@
+minor_changes:
+  - iscsi_configuration - add an ``auths`` option managing CHAP credentials
+    ("Authorized Access"), identified by their unique ``user``.
+  - iscsi_configuration - target groups now accept ``CHAP`` and ``CHAP_MUTUAL``
+    as ``authmethod``, and name their credential through ``groups[].auth``,
+    which is resolved to the credential tag expected by the middleware.

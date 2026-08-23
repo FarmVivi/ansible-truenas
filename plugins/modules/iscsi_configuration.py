@@ -25,6 +25,14 @@ options:
     type: list
     elements: dict
     description: Authorized initiator groups identified by unique comment.
+  auths:
+    type: list
+    elements: dict
+    description:
+      - CHAP credentials ("Authorized Access" in the web UI), identified by
+        their unique C(user).
+      - Several credentials may share a C(tag); a target group referencing that
+        tag accepts any of them.
   extents:
     type: list
     elements: dict
@@ -39,8 +47,13 @@ options:
     description: Target-to-extent associations referenced by names.
 notes:
   - Supports check mode.
-  - CHAP credentials are not managed by this module. Target groups accept only
-    C(NONE) authentication until a secret-safe credential module is available.
+  - A target group references a credential by its C(user), which is resolved to
+    the underlying C(tag). The middleware matches C(groups[].auth) against the
+    credential B(tag), not against its row id, despite what the API reference
+    suggests.
+  - Secrets are marked C(no_log). Idempotency relies on C(iscsi.auth.query)
+    returning them in the clear; should a future release redact them, the
+    credential would be rewritten on every run (reported as changed).
 version_added: 2.1.0
 '''
 
@@ -57,15 +70,24 @@ EXAMPLES = r'''
     initiators:
       - comment: kubernetes-node
         initiators: [iqn.2026-04.home.example:node-01]
+    auths:
+      - tag: 1
+        user: bulk-01
+        secret: "{{ vault_iscsi_secret }}"
+        peeruser: nas-bulk-01
+        peersecret: "{{ vault_iscsi_peersecret }}"
     extents:
       - name: bulk-01
         disk: zvol/tank/bulk-01
         blocksize: 4096
     targets:
       - name: bulk-01
+        auth_networks: [10.2.2.30/32]
         groups:
           - portal: storage-lan
             initiator: kubernetes-node
+            authmethod: CHAP_MUTUAL
+            auth: bulk-01
     associations:
       - target: bulk-01
         extent: bulk-01
@@ -131,10 +153,21 @@ def main():
         enabled=dict(type='bool'),
         product_id=dict(type='str'),
     )
+    auth_spec = dict(
+        tag=dict(type='int', required=True),
+        user=dict(type='str', required=True),
+        secret=dict(type='str', required=True, no_log=True),
+        peeruser=dict(type='str'),
+        peersecret=dict(type='str', no_log=True),
+        discovery_auth=dict(type='str', default='NONE',
+                            choices=['NONE', 'CHAP', 'CHAP_MUTUAL']),
+    )
     group_spec = dict(
         portal=dict(type='str', required=True),
         initiator=dict(type='str'),
-        authmethod=dict(type='str', choices=['NONE'], default='NONE'),
+        authmethod=dict(type='str', default='NONE',
+                        choices=['NONE', 'CHAP', 'CHAP_MUTUAL']),
+        auth=dict(type='str'),
     )
     target_spec = dict(
         name=dict(type='str', required=True),
@@ -163,6 +196,8 @@ def main():
                          default=[]),
             initiators=dict(type='list', elements='dict',
                             options=initiator_spec, default=[]),
+            auths=dict(type='list', elements='dict', options=auth_spec,
+                       default=[], no_log=False),
             extents=dict(type='list', elements='dict', options=extent_spec,
                          default=[]),
             targets=dict(type='list', elements='dict', options=target_spec,
@@ -187,6 +222,8 @@ def main():
                                  'comment', 'portal')
     desired_initiators = unique_map(module, module.params['initiators'],
                                     'comment', 'initiator group')
+    desired_auths = unique_map(module, module.params['auths'],
+                               'user', 'CHAP credential')
     desired_extents = unique_map(module, module.params['extents'],
                                  'name', 'extent')
     desired_targets = unique_map(module, module.params['targets'],
@@ -245,6 +282,28 @@ def main():
             if not module.check_mode:
                 call('iscsi.initiator.update', current['id'], update)
 
+    # Reconciled before the targets that reference them, and identified by
+    # `user`: the tag is a group number that several credentials may share, so
+    # it cannot serve as a key.
+    auths = call('iscsi.auth.query')
+    auths_by_user = unique_map(module, auths, 'user', 'existing CHAP credential')
+    auth_fields = ('tag', 'user', 'secret', 'peeruser', 'peersecret',
+                   'discovery_auth')
+    for user, desired in desired_auths.items():
+        current = auths_by_user.get(user)
+        payload = {field: desired[field] for field in auth_fields
+                   if desired.get(field) is not None}
+        if current is None:
+            changed.append(f'auth:{user}')
+            if not module.check_mode:
+                auths_by_user[user] = call('iscsi.auth.create', payload)
+            continue
+        update = wanted_fields(desired, current, auth_fields)
+        if update:
+            changed.append(f'auth:{user}')
+            if not module.check_mode:
+                call('iscsi.auth.update', current['id'], update)
+
     extents = call('iscsi.extent.query')
     extents_by_name = unique_map(module, extents, 'name', 'existing extent')
     extent_fields = ('type', 'disk', 'path', 'filesize', 'blocksize',
@@ -275,14 +334,23 @@ def main():
             portal = portals_by_comment.get(group['portal'])
             initiator = (initiators_by_comment.get(group['initiator'])
                          if group.get('initiator') else None)
-            if portal is None or (group.get('initiator') and initiator is None):
+            auth = (auths_by_user.get(group['auth'])
+                    if group.get('auth') else None)
+            if (portal is None
+                    or (group.get('initiator') and initiator is None)
+                    or (group.get('auth') and auth is None)):
                 references_missing = True
                 continue
+            if group['authmethod'] != 'NONE' and auth is None:
+                module.fail_json(
+                    msg=f'Target {name} requests {group["authmethod"]} without '
+                        'naming a credential in `auth`.')
             resolved_groups.append({
                 'portal': portal['id'],
                 'initiator': initiator['id'] if initiator else None,
                 'authmethod': group['authmethod'],
-                'auth': None,
+                # The middleware resolves this against the credential tag.
+                'auth': auth['tag'] if auth else None,
             })
         current = targets_by_name.get(name)
         if references_missing and module.check_mode:
