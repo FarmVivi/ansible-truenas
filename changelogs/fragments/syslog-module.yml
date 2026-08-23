@@ -1,0 +1,10 @@
+minor_changes:
+  - syslog - new module to manage remote syslog forwarding. The settings live
+    under ``system.advanced`` and had no module, so forwarding logs off the
+    appliance meant reimplementing the read/compare/update cycle over
+    ``midclt``. TrueNAS 25.10 exposes ``syslogservers`` as an array of at most
+    two ``{host, transport, tls_certificate}`` entries and replaces it wholesale
+    on update, so ``servers`` is declarative - omitting the option leaves the
+    list alone, passing an empty list disables forwarding. A TLS certificate is
+    resolved by its TrueNAS name rather than an installation-specific numeric
+    id, matching what ``system_general`` does for the web UI certificate.
