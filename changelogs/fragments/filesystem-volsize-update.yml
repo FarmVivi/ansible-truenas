@@ -1,0 +1,5 @@
+bugfixes:
+  - filesystem - growing an existing volume failed with ``[EINVAL] data.volsize:
+    Input should be a valid integer``. The update path sent ``volsize`` as the raw
+    string parameter while ``pool.dataset.update`` expects bytes as an integer;
+    it is now converted with ``parse_volsize()``, as the create path already did.

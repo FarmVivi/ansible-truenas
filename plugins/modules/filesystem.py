@@ -388,7 +388,8 @@ def build_update_args(params, existing_ds, module):
             current_volsize = prop_rawvalue(existing_ds, "volsize") or ""
             desired_str = str(parse_volsize(params["volsize"]))
             if desired_str != current_volsize:
-                update_args["volsize"] = params["volsize"]
+                # middlewared requires an integer (bytes), as on create.
+                update_args["volsize"] = parse_volsize(params["volsize"])
 
         # If user tries to update volblocksize => check if it differs
         # If differs => error. If same => skip
